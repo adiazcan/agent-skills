@@ -1,6 +1,6 @@
 #!/bin/bash
 
-# Script para crear una Minimal API de .NET 10 con Swagger
+# Script para crear una Minimal API de .NET 10 con Swagger y .NET Aspire
 # Uso: ./create_dotnet_api.sh <nombre-proyecto> <ruta-destino>
 
 set -e
@@ -73,12 +73,14 @@ cat > appsettings.json << 'EOF'
 }
 EOF
 
-# Crear Program.cs con configuración de Swagger, CORS y Dapr
+# Crear Program.cs con configuración de Swagger, CORS, Dapr y Aspire
 cat > Program.cs << 'EOF'
 using Microsoft.OpenApi.Models;
 using Dapr.Client;
 
 var builder = WebApplication.CreateBuilder(args);
+
+builder.AddServiceDefaults();
 
 // Configurar CORS
 var allowedOrigins = builder.Configuration.GetSection("Cors:AllowedOrigins").Get<string[]>() 
@@ -199,7 +201,70 @@ app.MapPost("/api/state/{key}", async (string key, StateValue request, DaprClien
 // Ejemplo de endpoint con Dapr Pub/Sub
 app.MapPost("/api/publish/{topic}", async (string topic, EventData eventData, DaprClient daprClient) =>
 {
-   
+    try
+    {
+        await daprClient.PublishEventAsync("pubsub", topic, eventData);
+        return Results.Ok(new { message = "Event published successfully", topic });
+    }
+    catch (Exception ex)
+    {
+        return Results.Problem(ex.Message);
+    }
+})
+.WithName("PublishEvent")
+.WithTags("Dapr")
+.WithOpenApi();
+
+app.MapDefaultEndpoints();
+
+app.Run();
+
+// Modelos de ejemplo
+public record EchoRequest(string Message);
+public record StateValue(string Value);
+public record EventData(string Message, DateTime Timestamp);
+EOF
+
+# Configurar .NET Aspire (obligatorio)
+echo "☁️  Configurando .NET Aspire..."
+cd ..
+
+# Crear proyecto AppHost
+dotnet new aspire-apphost -n "${PROJECT_NAME}.AppHost" -o "${PROJECT_NAME}.AppHost"
+
+# Crear proyecto ServiceDefaults
+dotnet new aspire-servicedefaults -n "${PROJECT_NAME}.ServiceDefaults" -o "${PROJECT_NAME}.ServiceDefaults"
+
+# Referencias
+dotnet add "${PROJECT_NAME}/${PROJECT_NAME}.csproj" reference "${PROJECT_NAME}.ServiceDefaults/${PROJECT_NAME}.ServiceDefaults.csproj"
+dotnet add "${PROJECT_NAME}.AppHost/${PROJECT_NAME}.AppHost.csproj" reference "${PROJECT_NAME}/${PROJECT_NAME}.csproj"
+
+# Configurar AppHost
+cat > "${PROJECT_NAME}.AppHost/Program.cs" << 'ASPIRE_APPHOST'
+var builder = DistributedApplication.CreateBuilder(args);
+
+// Redis para Dapr
+var redis = builder.AddRedis("redis")
+    .WithDataVolume();
+
+// SQL Server (opcional)
+var sqlserver = builder.AddSqlServer("sqlserver")
+    .WithDataVolume()
+    .AddDatabase("appdb");
+
+// API Backend
+var api = builder.AddProject<Projects.PROJECT_NAME>("api")
+    .WithReference(redis)
+    .WithReference(sqlserver)
+    .WithExternalHttpEndpoints();
+
+builder.Build().Run();
+ASPIRE_APPHOST
+
+sed -i "s/PROJECT_NAME/${PROJECT_NAME}/g" "${PROJECT_NAME}.AppHost/Program.cs"
+
+cd "${PROJECT_NAME}"
+
 # Crear archivos de ejemplo para el modelo 4+1
 echo "📝 Creando archivos de ejemplo del modelo 4+1..."
 
@@ -383,32 +448,13 @@ $PROJECT_NAME/
 
 - Ver `references/kruchten-4plus1-architecture.md` para documentación completa
 - [4+1 Architectural View Model](https://www.cs.ubc.ca/~gregor/teaching/papers/4+1view-architecture.pdf)
-EOF    {
-        await daprClient.PublishEventAsync("pubsub", topic, eventData);
-        return Results.Ok(new { message = "Event published successfully", topic });
-    }
-    catch (Exception ex)
-    {
-        return Results.Problem(ex.Message);
-    }
-})
-.WithName("PublishEvent")
-.WithTags("Dapr")
-.WithOpenApi();
-
-app.Run();
-
-// Modelos de ejemplo
-public record EchoRequest(string Message);
-public record StateValue(string Value);
-public record EventData(string Message, DateTime Timestamp);
 EOF
-
 echo "✅ Proyecto .NET 10 Minimal API creado exitosamente"
 echo ""
 echo "📦 Incluye:"
 echo "   ✓ Minimal API con Swagger"
 echo "   ✓ Dapr integration (State, Pub/Sub)"
+echo "   ✓ .NET Aspire (AppHost + ServiceDefaults)"
 echo "   ✓ Arquitectura Modelo 4+1 de Kruchten"
 echo "   ✓ Clean Architecture structure"
 echo ""
@@ -418,7 +464,11 @@ echo "   • Vista de Proceso: Infrastructure/Messaging/"
 echo "   • Vista de Desarrollo: Endpoints/, Extensions/"
 echo "   • Vista Física: Configuración Dapr"
 echo ""
-echo "📝 Para ejecutar:"
+echo "📝 Para ejecutar con Aspire (recomendado):"
+echo "   cd $FULL_PATH/${PROJECT_NAME}.AppHost"
+echo "   dotnet run"
+echo ""
+echo "📝 Para ejecutar solo la API:"
 echo "   cd $FULL_PATH/$PROJECT_NAME"
 echo "   dotnet run"
 echo ""

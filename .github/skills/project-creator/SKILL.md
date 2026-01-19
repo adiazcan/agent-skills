@@ -1,13 +1,13 @@
 ---
-name: dotnet-react-project-creator
-description: Create complete full-stack solutions with .NET 10 Minimal API backend (with Swagger/OpenAPI, Dapr, and .NET Aspire support) and React frontend (Vite + Zustand + TailwindCSS + React Router). Supports monolithic, microservices, and .NET Aspire-orchestrated architectures with API Gateway (YARP). Use when user requests to create, scaffold, or initialize a new .NET API project, React application, Visual Studio solution, full-stack project, Dapr-enabled microservices, .NET Aspire application, or microservices architecture. Triggered by requests mentioning .NET, minimal API, React, Vite, Zustand, TailwindCSS, React Router, Visual Studio solution, Dapr, microservices, API Gateway, .NET Aspire, cloud-native, or full-stack development.
+name: project-creator
+description: Create complete full-stack solutions with a .NET 10 Minimal API backend (with Swagger/OpenAPI, Dapr, and mandatory .NET Aspire orchestration) and a React frontend (Vite + Zustand + TailwindCSS + React Router). Supports monolithic and microservices architectures, always orchestrated by .NET Aspire with API Gateway (YARP) when applicable. Use when the user requests to create, scaffold, or initialize a new .NET API project, React application, Visual Studio solution, full-stack project, Dapr-enabled microservices, .NET Aspire application, or microservices architecture. Triggered by requests mentioning .NET, minimal API, React, Vite, Zustand, TailwindCSS, React Router, Visual Studio solution, Dapr, microservices, API Gateway, .NET Aspire, cloud-native, or full-stack development.
 ---
 
 # .NET 10 + React Project Creator
 
 ## Overview
 
-Create production-ready full-stack solutions with a .NET 10 Minimal API backend (with Dapr support, .NET Aspire orchestration, and Kruchten's 4+1 architectural model) and a modern React frontend using Vite, Zustand, TailwindCSS, and React Router. Supports **monolithic**, **microservices**, and **.NET Aspire-orchestrated** architectures. This skill provides automated scaffolding with clean architecture principles, Dapr integration for distributed systems, API Gateway with YARP, .NET Aspire for cloud-native orchestration, and ready-to-use templates with beautiful UI components for rapid development.
+Create production-ready full-stack solutions with a .NET 10 Minimal API backend (with Dapr support, **mandatory .NET Aspire orchestration**, and Kruchten's 4+1 architectural model) and a modern React frontend using Vite, Zustand, TailwindCSS, and React Router. Supports **monolithic** and **microservices** architectures, **always orchestrated by .NET Aspire**. This skill provides automated scaffolding with clean architecture principles, Dapr integration for distributed systems, API Gateway with YARP, .NET Aspire for cloud-native orchestration, and ready-to-use templates with beautiful UI components for rapid development.
 
 ## Quick Start
 
@@ -26,20 +26,22 @@ bash scripts/create_solution.sh MyApp ./projects
 
 This creates:
 - `MyApp.sln` - Visual Studio solution
+- `MyApp.AppHost/` - **.NET Aspire AppHost** (orchestrator)
+- `MyApp.ServiceDefaults/` - **Shared configuration** (telemetry, health checks, service discovery)
 - `MyApp.Api/` - .NET 10 Minimal API with Swagger and Dapr
 - `MyApp.Frontend/` - React app with Vite and Zustand
 
-### Create Solution with .NET Aspire
+### .NET Aspire Orchestration (Always Included)
 
-To create a solution orchestrated by .NET Aspire:
+All solutions are orchestrated by .NET Aspire by default (no flags required).
 
 ```bash
-bash scripts/create_solution.sh <SolutionName> <target-path> --aspire
+bash scripts/create_solution.sh <SolutionName> <target-path>
 ```
 
 Example:
 ```bash
-bash scripts/create_solution.sh MyApp ./projects --aspire
+bash scripts/create_solution.sh MyApp ./projects
 ```
 
 This creates:
@@ -57,7 +59,7 @@ dotnet run
 - Starts API, Frontend, Redis, SQL Server with one command
 - Opens Aspire Dashboard at `http://localhost:15888` (telemetry, logs, traces)
 
-### Create Microservices Architecture
+### Create Microservices Architecture (Aspire Included)
 
 To create a solution with microservices architecture including API Gateway:
 
@@ -72,6 +74,8 @@ bash scripts/create_solution.sh MyEcommerce ./projects --microservices
 
 This creates:
 - `MyEcommerce.sln` - Visual Studio solution
+- `MyEcommerce.AppHost/` - **.NET Aspire AppHost** (orchestrator)
+- `MyEcommerce.ServiceDefaults/` - **Shared configuration** (telemetry, health checks, service discovery)
 - `gateway/ApiGateway/` - **YARP API Gateway** (reverse proxy)
 - `services/Users/` - Users microservice with Dapr
 - `services/Orders/` - Orders microservice with Dapr
@@ -80,24 +84,9 @@ This creates:
 - `docker-compose.yml` - Full infrastructure setup
 - `run-all-services.sh` - Script to start all services
 
-### Create Microservices with .NET Aspire
+### Microservices + Aspire
 
-Combine microservices architecture with Aspire orchestration:
-
-```bash
-bash scripts/create_solution.sh <SolutionName> <target-path> --microservices --aspire
-```
-
-Example:
-```bash
-bash scripts/create_solution.sh MyEcommerce ./projects --microservices --aspire
-```
-
-This creates a full microservices architecture with .NET Aspire orchestration:
-- `MyEcommerce.AppHost/` - Orchestrates all microservices
-- `MyEcommerce.ServiceDefaults/` - Shared configuration
-- Gateway + Microservices + Frontend
-- Single command startup with full observability
+Aspire orchestration is always included with microservices (no extra flags).
 
 ### Add New Microservice
 
@@ -128,7 +117,9 @@ For standalone API projects:
 bash scripts/create_dotnet_api.sh <ProjectName> <target-path>
 ```
 
-Creates a .NET 10 Minimal API with:
+Creates a .NET 10 Minimal API with **.NET Aspire orchestration**:
+- `MyApp.AppHost/` - **.NET Aspire AppHost** (orchestrator)
+- `MyApp.ServiceDefaults/` - **Shared configuration** (telemetry, health checks, service discovery)
 - Swagger/OpenAPI at root URL
 - CORS configured for React development
 - **Dapr integration** (State Management, Pub/Sub, Service Invocation)
@@ -165,6 +156,8 @@ Creates a React application with:
 ```
 MyEcommerce/
 ├── MyEcommerce.sln                      # Visual Studio solution
+├── MyEcommerce.AppHost/                 # .NET Aspire AppHost (orchestrator)
+├── MyEcommerce.ServiceDefaults/         # Shared configuration (telemetry, health checks)
 ├── gateway/                             # API Gateway
 │   └── ApiGateway/
 │       └── MyEcommerce.Gateway/
@@ -375,6 +368,13 @@ Starts:
 
 ### Microservices Architecture
 
+#### Start with Aspire (Recommended)
+
+```bash
+cd MyEcommerce.AppHost
+dotnet run
+```
+
 #### Option 1: Automated Script (Development)
 
 ```bash
@@ -444,6 +444,13 @@ Orchestrates:
 ```
 
 ### Monolithic Architecture
+
+#### Start with Aspire (Recommended)
+
+```bash
+cd MyApp.AppHost
+dotnet run
+```
 
 #### Start Backend (Standard)
 
@@ -570,6 +577,16 @@ Start a new project with microservices:
 
 ```bash
 bash scripts/create_solution.sh ECommerceApp ./projects --microservices
+```
+
+Run with Aspire (recommended):
+```bash
+cd ECommerceApp.AppHost
+dotnet run
+```
+
+Or run all services manually:
+```bash
 cd ECommerceApp
 ./run-all-services.sh
 ```
@@ -820,10 +837,10 @@ npm install
 
 ## Example Usage Scenarios
 
-### .NET Aspire Applications
+### .NET Aspire Applications (Always On)
 
 **"Create a cloud-native app with Aspire"**
-→ Run: `bash scripts/create_solution.sh MyApp . --aspire`
+→ Run: `bash scripts/create_solution.sh MyApp .`
 
 **"Start everything with one command"**
 → Run: `cd MyApp.AppHost && dotnet run`
@@ -832,7 +849,7 @@ npm install
 → Open Aspire Dashboard: `http://localhost:15888`
 
 **"Add service discovery to my API"**
-→ Already included with `--aspire`, services communicate by name
+→ Always included; services communicate by name
 
 **"Deploy to Azure Container Apps"**
 → Run: `azd init && azd up` (see `references/aspire-integration.md`)
@@ -841,7 +858,7 @@ npm install
 → Run: `cd MyApp.AppHost && dotnet publish /t:GenerateDeploymentManifest`
 
 **"Create microservices orchestrated by Aspire"**
-→ Run: `bash scripts/create_solution.sh ECommerce . --microservices --aspire`
+→ Run: `bash scripts/create_solution.sh ECommerce . --microservices`
 
 **"Monitor distributed traces across services"**
 → Aspire Dashboard → Traces tab shows end-to-end request flow
@@ -929,6 +946,9 @@ npm install
 → K8s HPA configuration in `references/microservices-architecture.md`
 
 **"Start all microservices in development mode"**
+→ Prefer: `cd MyEcommerce.AppHost && dotnet run` (Aspire)
+
+**"Start all microservices with the legacy script"**
 → Run: `./run-all-services.sh`
 
 **"Deploy full stack with Docker Compose"**

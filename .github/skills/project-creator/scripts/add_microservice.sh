@@ -91,6 +91,8 @@ using Dapr.Client;
 
 var builder = WebApplication.CreateBuilder(args);
 
+builder.AddServiceDefaults();
+
 var serviceName = builder.Configuration["ServiceName"] ?? "UnknownService";
 
 // Configurar CORS
@@ -242,6 +244,8 @@ app.MapPost("/api/publish/{topic}", async (string topic, EventData eventData, Da
 .WithTags("PubSub")
 .WithOpenApi();
 
+app.MapDefaultEndpoints();
+
 app.Run();
 
 // Modelos
@@ -262,6 +266,14 @@ Microservicio $SERVICE_NAME como parte de la arquitectura de microservicios $SOL
 - **App ID Dapr**: ${SERVICE_NAME,,}
 
 ## Ejecutar
+
+### Con .NET Aspire (recomendado)
+Actualiza el AppHost para registrar el servicio y ejecuta:
+
+\`\`\`bash
+cd ../../${SOLUTION_NAME}.AppHost
+dotnet run
+\`\`\`
 
 ### Sin Dapr
 \`\`\`bash
@@ -302,6 +314,21 @@ cd ../../..
 # Agregar el proyecto a la solución
 echo "➕ Agregando proyecto a la solución..."
 dotnet sln "$SLN_FILE" add "services/$SERVICE_NAME/$PROJECT_NAME/$PROJECT_NAME.csproj"
+
+# Integración con .NET Aspire (ServiceDefaults + AppHost)
+SERVICE_DEFAULTS_PROJECT="${SOLUTION_NAME}.ServiceDefaults/${SOLUTION_NAME}.ServiceDefaults.csproj"
+APPHOST_PROJECT="${SOLUTION_NAME}.AppHost/${SOLUTION_NAME}.AppHost.csproj"
+
+if [ -f "$SERVICE_DEFAULTS_PROJECT" ]; then
+    echo "☁️  Añadiendo referencia a ServiceDefaults..."
+    dotnet add "services/$SERVICE_NAME/$PROJECT_NAME/$PROJECT_NAME.csproj" reference "$SERVICE_DEFAULTS_PROJECT"
+fi
+
+if [ -f "$APPHOST_PROJECT" ]; then
+    echo "☁️  Añadiendo referencia del microservicio al AppHost..."
+    dotnet add "$APPHOST_PROJECT" reference "services/$SERVICE_NAME/$PROJECT_NAME/$PROJECT_NAME.csproj"
+    echo "ℹ️  Actualiza ${SOLUTION_NAME}.AppHost/Program.cs para registrar el nuevo servicio en Aspire."
+fi
 
 # Crear archivo de configuración Dapr para el servicio
 echo "📝 Creando configuración Dapr..."

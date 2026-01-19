@@ -1,22 +1,20 @@
 #!/bin/bash
 
-# Script para crear una solución de Visual Studio completa con Arquitectura de Microservicios
-# Uso: ./create_solution.sh <nombre-solucion> <ruta-destino> [--microservices] [--aspire]
+# Script para crear una solución de Visual Studio completa
+# Uso: ./create_solution.sh <nombre-solucion> <ruta-destino> [--microservices]
+# Nota: .NET Aspire es obligatorio y siempre se incluye.
 
 set -e
 
 SOLUTION_NAME=${1:-"MyApp"}
 TARGET_PATH=${2:-"./"}
 MICROSERVICES_MODE=""
-ASPIRE_MODE=""
 
 # Parsear argumentos
 for arg in "$@"; do
-    if [ "$arg" = "--microservices" ]; then
-        MICROSERVICES_MODE="--microservices"
-    elif [ "$arg" = "--aspire" ]; then
-        ASPIRE_MODE="--aspire"
-    fi
+  if [ "$arg" = "--microservices" ]; then
+    MICROSERVICES_MODE="--microservices"
+  fi
 done
 
 FULL_PATH="$TARGET_PATH/$SOLUTION_NAME"
@@ -25,15 +23,9 @@ echo "🚀 Creando solución completa: $SOLUTION_NAME"
 echo "📂 Ubicación: $FULL_PATH"
 
 if [ "$MICROSERVICES_MODE" = "--microservices" ]; then
-    if [ "$ASPIRE_MODE" = "--aspire" ]; then
-        echo "🔄 Modo: Arquitectura de Microservicios con .NET Aspire"
-    else
-        echo "🔄 Modo: Arquitectura de Microservicios"
-    fi
-elif [ "$ASPIRE_MODE" = "--aspire" ]; then
-    echo "🔄 Modo: Monolito con .NET Aspire"
+  echo "🔄 Modo: Arquitectura de Microservicios con .NET Aspire"
 else
-    echo "🔄 Modo: Monolito (usa --microservices para microservicios o --aspire para .NET Aspire)"
+  echo "🔄 Modo: Monolito con .NET Aspire"
 fi
 
 # Crear directorio principal
@@ -377,39 +369,38 @@ else
     bash "$SCRIPT_DIR/create_react_app.sh" "${SOLUTION_NAME}.Frontend" "."
 fi
 
-# Si se especificó --aspire, añadir proyectos de Aspire
-if [ "$ASPIRE_MODE" = "--aspire" ]; then
-    echo "☁️  Configurando .NET Aspire..."
+# .NET Aspire es obligatorio
+echo "☁️  Configurando .NET Aspire..."
+
+# Crear proyecto AppHost
+echo "📦 Creando proyecto AppHost..."
+dotnet new aspire-apphost -n "${SOLUTION_NAME}.AppHost" -o "${SOLUTION_NAME}.AppHost"
+dotnet sln add "${SOLUTION_NAME}.AppHost/${SOLUTION_NAME}.AppHost.csproj"
+
+# Crear proyecto ServiceDefaults
+echo "⚙️  Creando proyecto ServiceDefaults..."
+dotnet new aspire-servicedefaults -n "${SOLUTION_NAME}.ServiceDefaults" -o "${SOLUTION_NAME}.ServiceDefaults"
+dotnet sln add "${SOLUTION_NAME}.ServiceDefaults/${SOLUTION_NAME}.ServiceDefaults.csproj"
+
+# Configurar referencias según el modo
+if [ "$MICROSERVICES_MODE" = "--microservices" ]; then
+  # Añadir referencias a ServiceDefaults en cada microservicio
+  for service_dir in services/*/; do
+    if [ -d "$service_dir" ]; then
+      service_name=$(basename "$service_dir")
+      project_file=$(find "$service_dir" -name "*.csproj" | head -n 1)
+      if [ -n "$project_file" ]; then
+        echo "  → Añadiendo ServiceDefaults a $service_name"
+        dotnet add "$project_file" reference "${SOLUTION_NAME}.ServiceDefaults/${SOLUTION_NAME}.ServiceDefaults.csproj"
+      fi
+    fi
+  done
     
-    # Crear proyecto AppHost
-    echo "📦 Creando proyecto AppHost..."
-    dotnet new aspire-apphost -n "${SOLUTION_NAME}.AppHost" -o "${SOLUTION_NAME}.AppHost"
-    dotnet sln add "${SOLUTION_NAME}.AppHost/${SOLUTION_NAME}.AppHost.csproj"
+  # Añadir referencia en Gateway
+  dotnet add "gateway/ApiGateway/${SOLUTION_NAME}.Gateway/${SOLUTION_NAME}.Gateway.csproj" reference "${SOLUTION_NAME}.ServiceDefaults/${SOLUTION_NAME}.ServiceDefaults.csproj"
     
-    # Crear proyecto ServiceDefaults
-    echo "⚙️  Creando proyecto ServiceDefaults..."
-    dotnet new aspire-servicedefaults -n "${SOLUTION_NAME}.ServiceDefaults" -o "${SOLUTION_NAME}.ServiceDefaults"
-    dotnet sln add "${SOLUTION_NAME}.ServiceDefaults/${SOLUTION_NAME}.ServiceDefaults.csproj"
-    
-    # Configurar referencias según el modo
-    if [ "$MICROSERVICES_MODE" = "--microservices" ]; then
-        # Añadir referencias a ServiceDefaults en cada microservicio
-        for service_dir in services/*/; do
-            if [ -d "$service_dir" ]; then
-                service_name=$(basename "$service_dir")
-                project_file=$(find "$service_dir" -name "*.csproj" | head -n 1)
-                if [ -n "$project_file" ]; then
-                    echo "  → Añadiendo ServiceDefaults a $service_name"
-                    dotnet add "$project_file" reference "${SOLUTION_NAME}.ServiceDefaults/${SOLUTION_NAME}.ServiceDefaults.csproj"
-                fi
-            fi
-        done
-        
-        # Añadir referencia en Gateway
-        dotnet add "gateway/ApiGateway/${SOLUTION_NAME}.Gateway/${SOLUTION_NAME}.Gateway.csproj" reference "${SOLUTION_NAME}.ServiceDefaults/${SOLUTION_NAME}.ServiceDefaults.csproj"
-        
-        # Configurar AppHost para microservicios
-        cat > "${SOLUTION_NAME}.AppHost/Program.cs" << 'ASPIRE_APPHOST'
+  # Configurar AppHost para microservicios
+  cat > "${SOLUTION_NAME}.AppHost/Program.cs" << 'ASPIRE_APPHOST'
 var builder = DistributedApplication.CreateBuilder(args);
 
 // Redis para Dapr
@@ -445,16 +436,16 @@ var frontend = builder.AddNpmApp("frontend", "../SOLUTION.Frontend")
 
 builder.Build().Run();
 ASPIRE_APPHOST
-        
-        # Reemplazar SOLUTION con el nombre real
-        sed -i "s/SOLUTION/${SOLUTION_NAME}/g" "${SOLUTION_NAME}.AppHost/Program.cs"
-        
-    else
-        # MONOLITO: Añadir referencia a ServiceDefaults en API
-        dotnet add "${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api.csproj" reference "${SOLUTION_NAME}.ServiceDefaults/${SOLUTION_NAME}.ServiceDefaults.csproj"
-        
-        # Configurar AppHost para monolito
-        cat > "${SOLUTION_NAME}.AppHost/Program.cs" << 'ASPIRE_APPHOST_MONO'
+    
+  # Reemplazar SOLUTION con el nombre real
+  sed -i "s/SOLUTION/${SOLUTION_NAME}/g" "${SOLUTION_NAME}.AppHost/Program.cs"
+    
+else
+  # MONOLITO: Añadir referencia a ServiceDefaults en API
+  dotnet add "${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api.csproj" reference "${SOLUTION_NAME}.ServiceDefaults/${SOLUTION_NAME}.ServiceDefaults.csproj"
+    
+  # Configurar AppHost para monolito
+  cat > "${SOLUTION_NAME}.AppHost/Program.cs" << 'ASPIRE_APPHOST_MONO'
 var builder = DistributedApplication.CreateBuilder(args);
 
 // Redis para Dapr
@@ -481,60 +472,59 @@ var frontend = builder.AddNpmApp("frontend", "../SOLUTION.Frontend")
 
 builder.Build().Run();
 ASPIRE_APPHOST_MONO
-        
-        # Reemplazar SOLUTION con el nombre real
-        sed -i "s/SOLUTION/${SOLUTION_NAME}/g" "${SOLUTION_NAME}.AppHost/Program.cs"
-    fi
     
-    # Añadir referencias de proyectos al AppHost
-    if [ "$MICROSERVICES_MODE" = "--microservices" ]; then
-        for service_dir in services/*/; do
-            if [ -d "$service_dir" ]; then
-                project_file=$(find "$service_dir" -name "*.csproj" | head -n 1)
-                if [ -n "$project_file" ]; then
-                    dotnet add "${SOLUTION_NAME}.AppHost/${SOLUTION_NAME}.AppHost.csproj" reference "$project_file"
-                fi
-            fi
-        done
-        dotnet add "${SOLUTION_NAME}.AppHost/${SOLUTION_NAME}.AppHost.csproj" reference "gateway/ApiGateway/${SOLUTION_NAME}.Gateway/${SOLUTION_NAME}.Gateway.csproj"
-    else
-        dotnet add "${SOLUTION_NAME}.AppHost/${SOLUTION_NAME}.AppHost.csproj" reference "${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api.csproj"
+  # Reemplazar SOLUTION con el nombre real
+  sed -i "s/SOLUTION/${SOLUTION_NAME}/g" "${SOLUTION_NAME}.AppHost/Program.cs"
+fi
+
+# Añadir referencias de proyectos al AppHost
+if [ "$MICROSERVICES_MODE" = "--microservices" ]; then
+  for service_dir in services/*/; do
+    if [ -d "$service_dir" ]; then
+      project_file=$(find "$service_dir" -name "*.csproj" | head -n 1)
+      if [ -n "$project_file" ]; then
+        dotnet add "${SOLUTION_NAME}.AppHost/${SOLUTION_NAME}.AppHost.csproj" reference "$project_file"
+      fi
     fi
+  done
+  dotnet add "${SOLUTION_NAME}.AppHost/${SOLUTION_NAME}.AppHost.csproj" reference "gateway/ApiGateway/${SOLUTION_NAME}.Gateway/${SOLUTION_NAME}.Gateway.csproj"
+else
+  dotnet add "${SOLUTION_NAME}.AppHost/${SOLUTION_NAME}.AppHost.csproj" reference "${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api.csproj"
+fi
+
+# Actualizar Program.cs de los servicios para usar ServiceDefaults
+if [ "$MICROSERVICES_MODE" = "--microservices" ]; then
+  for service_dir in services/*/; do
+    if [ -d "$service_dir" ]; then
+      program_file=$(find "$service_dir" -name "Program.cs" | head -n 1)
+      if [ -n "$program_file" ]; then
+        # Insertar AddServiceDefaults después de CreateBuilder
+        sed -i '/var builder = WebApplication.CreateBuilder(args);/a builder.AddServiceDefaults();' "$program_file"
+        # Insertar MapDefaultEndpoints antes de Run
+        sed -i '/app.Run();/i app.MapDefaultEndpoints();' "$program_file"
+      fi
+    fi
+  done
     
-    # Actualizar Program.cs de los servicios para usar ServiceDefaults
-    if [ "$MICROSERVICES_MODE" = "--microservices" ]; then
-        for service_dir in services/*/; do
-            if [ -d "$service_dir" ]; then
-                program_file=$(find "$service_dir" -name "Program.cs" | head -n 1)
-                if [ -n "$program_file" ]; then
-                    # Insertar AddServiceDefaults después de CreateBuilder
-                    sed -i '/var builder = WebApplication.CreateBuilder(args);/a builder.AddServiceDefaults();' "$program_file"
-                    # Insertar MapDefaultEndpoints antes de Run
-                    sed -i '/app.Run();/i app.MapDefaultEndpoints();' "$program_file"
-                fi
-            fi
-        done
-        
-        # Actualizar Gateway
-        gateway_program="gateway/ApiGateway/${SOLUTION_NAME}.Gateway/Program.cs"
-        if [ -f "$gateway_program" ]; then
-            sed -i '/var builder = WebApplication.CreateBuilder(args);/a builder.AddServiceDefaults();' "$gateway_program"
-            sed -i '/app.Run();/i app.MapDefaultEndpoints();' "$gateway_program"
-        fi
-    else
-        # Actualizar API monolito
-        api_program="${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api/Program.cs"
-        if [ -f "$api_program" ]; then
-            sed -i '/var builder = WebApplication.CreateBuilder(args);/a builder.AddServiceDefaults();' "$api_program"
-            sed -i '/app.Run();/i app.MapDefaultEndpoints();' "$api_program"
-        fi
-    fi
+  # Actualizar Gateway
+  gateway_program="gateway/ApiGateway/${SOLUTION_NAME}.Gateway/Program.cs"
+  if [ -f "$gateway_program" ]; then
+    sed -i '/var builder = WebApplication.CreateBuilder(args);/a builder.AddServiceDefaults();' "$gateway_program"
+    sed -i '/app.Run();/i app.MapDefaultEndpoints();' "$gateway_program"
+  fi
+else
+  # Actualizar API monolito
+  api_program="${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api/Program.cs"
+  if [ -f "$api_program" ]; then
+    sed -i '/var builder = WebApplication.CreateBuilder(args);/a builder.AddServiceDefaults();' "$api_program"
+    sed -i '/app.Run();/i app.MapDefaultEndpoints();' "$api_program"
+  fi
 fi
 
 # Crear README según el modo
-if [ "$ASPIRE_MODE" = "--aspire" ] && [ "$MICROSERVICES_MODE" = "--microservices" ]; then
-    # README para Microservicios con Aspire
-    cat > README.md << EOF
+if [ "$MICROSERVICES_MODE" = "--microservices" ]; then
+  # README para Microservicios con Aspire
+  cat > README.md << EOF
 # $SOLUTION_NAME - Arquitectura de Microservicios con .NET Aspire
 
 Solución completa con arquitectura de microservicios orquestada por .NET Aspire.
@@ -653,9 +643,9 @@ azd up
 
 EOF
 
-elif [ "$ASPIRE_MODE" = "--aspire" ]; then
-    # README para Monolito con Aspire
-    cat > README.md << EOF
+else
+  # README para Monolito con Aspire
+  cat > README.md << EOF
 # $SOLUTION_NAME - .NET Aspire Application
 
 Aplicación full-stack con .NET 10 API y React, orquestada por .NET Aspire.
@@ -758,319 +748,6 @@ kubectl apply -f manifest.yaml
 
 EOF
 
-elif [ "$MICROSERVICES_MODE" = "--microservices" ]; then
-    cat > README.md << EOF
-# $SOLUTION_NAME - Arquitectura de Microservicios
-
-Solución completa con arquitectura de microservicios, API Gateway, Dapr y frontend React.
-
-## 🏗️ Arquitectura
-
-\`\`\`
-$SOLUTION_NAME/
-├── $SOLUTION_NAME.sln                        # Solución de Visual Studio
-├── gateway/                                   # API Gateway (YARP)
-│   └── ApiGateway/
-│       └── ${SOLUTION_NAME}.Gateway/
-├── services/                                  # Microservicios
-│   ├── Users/
-│   │   └── ${SOLUTION_NAME}.Users/
-│   └── Orders/
-│       └── ${SOLUTION_NAME}.Orders/
-├── frontend/                                  # Frontend React
-│   └── ${SOLUTION_NAME}.Frontend/
-├── dapr-config/                              # Configuración Dapr
-│   └── components/
-│       ├── statestore.yaml
-│       ├── pubsub.yaml
-│       └── servicediscovery.yaml
-├── shared/                                   # Contratos compartidos
-│   └── contracts/
-├── docker-compose.yml                        # Orquestación Docker
-└── run-all-services.sh                       # Script para iniciar todo
-\`\`\`
-
-## 📋 Requisitos
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- [Node.js 18+](https://nodejs.org/)
-- [Dapr CLI](https://docs.dapr.io/getting-started/install-dapr-cli/)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/)
-- [Visual Studio 2025](https://visualstudio.microsoft.com/) o [Visual Studio Code](https://code.visualstudio.com/)
-
-## 🚀 Inicio Rápido
-
-### Opción 1: Todos los servicios con script (recomendado para desarrollo)
-
-\`\`\`bash
-./run-all-services.sh
-\`\`\`
-
-### Opción 2: Con Docker Compose (recomendado para producción)
-
-\`\`\`bash
-docker-compose up --build
-\`\`\`
-
-### Opción 3: Manual (paso a paso)
-
-1. **Iniciar infraestructura**:
-   \`\`\`bash
-   docker run -d -p 6379:6379 redis:alpine
-   \`\`\`
-
-2. **Iniciar API Gateway**:
-   \`\`\`bash
-   cd gateway/ApiGateway/${SOLUTION_NAME}.Gateway
-   dotnet run
-   \`\`\`
-
-3. **Iniciar Microservicios con Dapr**:
-   \`\`\`bash
-   # Users Service
-   cd services/Users
-   ./run-with-dapr.sh
-   
-   # Orders Service (en otra terminal)
-   cd services/Orders
-   ./run-with-dapr.sh
-   \`\`\`
-
-4. **Iniciar Frontend**:
-   \`\`\`bash
-   cd frontend/${SOLUTION_NAME}.Frontend
-   npm run dev
-   \`\`\`
-
-## 🌐 Endpoints
-
-- **Frontend**: http://localhost:5173
-- **API Gateway**: http://localhost:5000
-- **Users Service**: http://localhost:5001
-- **Orders Service**: http://localhost:5002
-
-### Rutas del Gateway
-
-- \`GET /api/users/*\` → Users Service
-- \`GET /api/orders/*\` → Orders Service
-- \`GET /health\` → Gateway Health
-
-## 📦 Añadir un Nuevo Microservicio
-
-\`\`\`bash
-bash scripts/add_microservice.sh <NombreServicio> <Puerto> <PuertoDapr> <RutaSolucion>
-\`\`\`
-
-Ejemplo:
-\`\`\`bash
-bash scripts/add_microservice.sh Products 5003 3503 .
-\`\`\`
-
-Después, actualiza el \`appsettings.json\` del Gateway para añadir la ruta:
-
-\`\`\`json
-"product-service-route": {
-  "ClusterId": "product-service",
-  "Match": {
-    "Path": "/api/products/{**catch-all}"
-  }
-},
-"Clusters": {
-  "product-service": {
-    "Destinations": {
-      "destination1": {
-        "Address": "http://localhost:5003"
-      }
-    }
-  }
-}
-\`\`\`
-
-## 🔧 Características
-
-### Microservicios
-- Arquitectura distribuida con separación de responsabilidades
-- Cada servicio tiene su propio dominio y base de datos (Database per Service)
-- Comunicación asíncrona con Dapr Pub/Sub
-- Comunicación síncrona con Dapr Service Invocation
-- State Management con Dapr State Store
-
-### API Gateway
-- YARP Reverse Proxy para enrutamiento
-- CORS configurado
-- Health checks
-- Balanceo de carga
-- Rate limiting (configurable)
-
-### Frontend
-- React 18+ con Vite
-- Zustand para estado global
-- React Router para navegación
-- TailwindCSS para estilos
-- Axios para peticiones HTTP
-
-## 🐳 Docker
-
-Cada servicio tiene su propio Dockerfile. Para construir:
-
-\`\`\`bash
-docker-compose build
-docker-compose up
-\`\`\`
-
-## 📚 Documentación
-
-- [Dapr Documentation](https://docs.dapr.io/)
-- [YARP Documentation](https://microsoft.github.io/reverse-proxy/)
-- [Microservices Architecture Guide](./docs/microservices-architecture.md)
-- [Kruchten 4+1 Architecture](./docs/kruchten-4plus1-architecture.md)
-
-## 🛠️ Desarrollo
-
-### Agregar endpoint a un microservicio
-
-Edita \`Program.cs\` del microservicio correspondiente y añade tu endpoint.
-
-### Comunicación entre servicios
-
-Usa Dapr Service Invocation:
-\`\`\`csharp
-var result = await daprClient.InvokeMethodAsync<OrderResponse>(
-    HttpMethod.Get,
-    "orders",  // App ID del servicio destino
-    "api/orders/123"
-);
-\`\`\`
-
-### Pub/Sub
-
-Publicar evento:
-\`\`\`csharp
-await daprClient.PublishEventAsync("pubsub", "order-created", orderData);
-\`\`\`
-
-Suscribirse:
-\`\`\`csharp
-app.MapPost("/orders/created", [Topic("pubsub", "order-created")] 
-    (OrderEvent evt) => {
-    // Manejar evento
-});
-\`\`\`
-
-## 🧪 Testing
-
-\`\`\`bash
-dotnet test
-\`\`\`
-
-## 📈 Monitoreo
-
-Dapr proporciona observabilidad out-of-the-box:
-- Métricas: Prometheus en http://localhost:9090
-- Tracing: Zipkin en http://localhost:9411
-- Logging: Salida estándar de cada servicio
-
-## 🚦 Detener servicios
-
-\`\`\`bash
-./stop-all-services.sh
-\`\`\`
-
-O con Docker:
-\`\`\`bash
-docker-compose down
-\`\`\`
-
-EOF
-else
-    cat > README.md << EOF
-# $SOLUTION_NAME
-
-Solución completa con backend .NET 10 Minimal API y frontend React + Vite.
-
-## Estructura del proyecto
-
-\`\`\`
-$SOLUTION_NAME/
-├── $SOLUTION_NAME.sln                    # Solución de Visual Studio
-├── ${SOLUTION_NAME}.Api/                 # Proyecto backend
-│   └── ${SOLUTION_NAME}.Api/
-│       ├── Program.cs                    # Punto de entrada de la API
-│       ├── appsettings.json              # Configuración
-│       └── ...
-└── ${SOLUTION_NAME}.Frontend/            # Proyecto frontend
-    ├── src/
-    ├── package.json
-    └── ...
-\`\`\`
-
-## Requisitos
-
-- [.NET 10 SDK](https://dotnet.microsoft.com/download/dotnet/10.0)
-- [Node.js 18+](https://nodejs.org/)
-- [Visual Studio 2025](https://visualstudio.microsoft.com/) o [Visual Studio Code](https://code.visualstudio.com/)
-
-## Ejecutar el proyecto
-
-### Backend (.NET API)
-
-\`\`\`bash
-cd ${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api
-dotnet run
-\`\`\`
-
-La API estará disponible en \`https://localhost:<puerto>\` con Swagger en la raíz.
-
-### Frontend (React)
-
-\`\`\`bash
-cd ${SOLUTION_NAME}.Frontend
-npm run dev
-\`\`\`
-
-La aplicación estará disponible en \`http://localhost:5173\`.
-
-## Desarrollo
-
-### Backend
-
-- La API usa Minimal APIs de .NET 10
-- Swagger/OpenAPI configurado en la raíz
-- CORS configurado para localhost:5173 y localhost:3000
-- Estructura organizada siguiendo el Modelo 4+1 de Kruchten
-- Dapr para state management y pub/sub
-
-### Frontend
-
-- React 18+ con Vite
-- Zustand para gestión de estado
-- Axios para peticiones HTTP
-- React Router para navegación
-- TailwindCSS para estilos
-
-## Endpoints de ejemplo
-
-- \`GET /api/health\` - Health check
-- \`GET /api/version\` - Información de versión
-- \`GET /api/greeting/{name}\` - Saludo personalizado
-- \`POST /api/echo\` - Echo de mensajes
-
-## Migrar a Microservicios
-
-Para convertir esta solución en una arquitectura de microservicios:
-
-\`\`\`bash
-bash scripts/create_solution.sh $SOLUTION_NAME . --microservices
-\`\`\`
-
-## Siguiente pasos
-
-1. Personalizar los endpoints de la API
-2. Implementar los stores de Zustand
-3. Crear componentes de React
-4. Configurar variables de entorno
-5. Implementar autenticación si es necesario
-
 EOF
 fi
 
@@ -1106,101 +783,46 @@ echo ""
 echo "✅ ¡Solución creada exitosamente!"
 echo ""
 
-if [ "$ASPIRE_MODE" = "--aspire" ] && [ "$MICROSERVICES_MODE" = "--microservices" ]; then
-    echo "📁 Arquitectura de Microservicios con .NET Aspire creada:"
-    echo "   $FULL_PATH/"
-    echo "   ├── $SOLUTION_NAME.sln"
-    echo "   ├── $SOLUTION_NAME.AppHost/ (Orquestador Aspire)"
-    echo "   ├── $SOLUTION_NAME.ServiceDefaults/ (Configuración compartida)"
-    echo "   ├── gateway/ApiGateway/${SOLUTION_NAME}.Gateway/"
-    echo "   ├── services/Users/${SOLUTION_NAME}.Users/"
-    echo "   ├── services/Orders/${SOLUTION_NAME}.Orders/"
-    echo "   └── frontend/${SOLUTION_NAME}.Frontend/"
-    echo ""
-    echo "🚀 Para comenzar con Aspire:"
-    echo "   cd $FULL_PATH/${SOLUTION_NAME}.AppHost"
-    echo "   dotnet run"
-    echo ""
-    echo "📊 Aspire Dashboard: http://localhost:15888"
-    echo "🌐 Frontend: http://localhost:5173"
-    echo "🔧 Gateway: http://localhost:5000"
+if [ "$MICROSERVICES_MODE" = "--microservices" ]; then
+  echo "📁 Arquitectura de Microservicios con .NET Aspire creada:"
+  echo "   $FULL_PATH/"
+  echo "   ├── $SOLUTION_NAME.sln"
+  echo "   ├── $SOLUTION_NAME.AppHost/ (Orquestador Aspire)"
+  echo "   ├── $SOLUTION_NAME.ServiceDefaults/ (Configuración compartida)"
+  echo "   ├── gateway/ApiGateway/${SOLUTION_NAME}.Gateway/"
+  echo "   ├── services/Users/${SOLUTION_NAME}.Users/"
+  echo "   ├── services/Orders/${SOLUTION_NAME}.Orders/"
+  echo "   └── frontend/${SOLUTION_NAME}.Frontend/"
+  echo ""
+  echo "🚀 Para comenzar con Aspire:"
+  echo "   cd $FULL_PATH/${SOLUTION_NAME}.AppHost"
+  echo "   dotnet run"
+  echo ""
+  echo "📊 Aspire Dashboard: http://localhost:15888"
+  echo "🌐 Frontend: http://localhost:5173"
+  echo "🔧 Gateway: http://localhost:5000"
     
-elif [ "$ASPIRE_MODE" = "--aspire" ]; then
-    echo "📁 Aplicación con .NET Aspire creada:"
-    echo "   $FULL_PATH/"
-    echo "   ├── $SOLUTION_NAME.sln"
-    echo "   ├── $SOLUTION_NAME.AppHost/ (Orquestador Aspire)"
-    echo "   ├── $SOLUTION_NAME.ServiceDefaults/ (Configuración compartida)"
-    echo "   ├── ${SOLUTION_NAME}.Api/"
-    echo "   └── ${SOLUTION_NAME}.Frontend/"
-    echo ""
-    echo "🚀 Para comenzar con Aspire:"
-    echo "   cd $FULL_PATH/${SOLUTION_NAME}.AppHost"
-    echo "   dotnet run"
-    echo ""
-    echo "📊 Aspire Dashboard: http://localhost:15888"
-    echo "⚛️  Frontend: http://localhost:5173"
-    echo "🔧 API: https://localhost:7000"
-    
-elif [ "$MICROSERVICES_MODE" = "--microservices" ]; then
-    echo "📁 Arquitectura de Microservicios creada:"
-    echo "   $FULL_PATH/"
-    echo "   ├── $SOLUTION_NAME.sln"
-    echo "   ├── gateway/ApiGateway/${SOLUTION_NAME}.Gateway/"
-    echo "   ├── services/Users/${SOLUTION_NAME}.Users/"
-    echo "   ├── services/Orders/${SOLUTION_NAME}.Orders/"
-    echo "   ├── frontend/${SOLUTION_NAME}.Frontend/"
-    echo "   ├── dapr-config/components/"
-    echo "   └── docker-compose.yml"
-    echo ""
-    echo "🚀 Para comenzar:"
-    echo ""
-    echo "   Opción 1 - Script automatizado:"
-    echo "   cd $FULL_PATH"
-    echo "   ./run-all-services.sh"
-    echo ""
-    echo "   Opción 2 - Docker Compose:"
-    echo "   cd $FULL_PATH"
-    echo "   docker-compose up --build"
-    echo ""
-    echo "   Opción 3 - Manual:"
-    echo "   1. Iniciar Redis: docker run -d -p 6379:6379 redis:alpine"
-    echo "   2. Gateway: cd gateway/ApiGateway/${SOLUTION_NAME}.Gateway && dotnet run"
-    echo "   3. Servicios: cd services/Users && ./run-with-dapr.sh"
-    echo "   4. Frontend: cd frontend/${SOLUTION_NAME}.Frontend && npm run dev"
-    echo ""
-    echo "🌐 URLs:"
-    echo "   Frontend: http://localhost:5173"
-    echo "   Gateway: http://localhost:5000"
-    echo "   Users: http://localhost:5001"
-    echo "   Orders: http://localhost:5002"
-    echo ""
-    echo "📦 Añadir más microservicios:"
-    echo "   bash scripts/add_microservice.sh <NombreServicio> <Puerto> <PuertoDapr> ."
 else
-    echo "📁 Estructura creada:"
-    echo "   $FULL_PATH/"
-    echo "   ├── $SOLUTION_NAME.sln"
-    echo "   ├── ${SOLUTION_NAME}.Api/"
-    echo "   └── ${SOLUTION_NAME}.Frontend/"
-    echo ""
-    echo "🚀 Para comenzar:"
-    echo ""
-    echo "   Backend:"
-    echo "   cd $FULL_PATH/${SOLUTION_NAME}.Api/${SOLUTION_NAME}.Api"
-    echo "   dotnet run"
-    echo ""
-    echo "   Frontend:"
-    echo "   cd $FULL_PATH/${SOLUTION_NAME}.Frontend"
-    echo "   npm run dev"
-    echo ""
-    echo "💡 Para .NET Aspire, usa:"
-    echo "   bash scripts/create_solution.sh $SOLUTION_NAME . --aspire"
+  echo "📁 Aplicación con .NET Aspire creada:"
+  echo "   $FULL_PATH/"
+  echo "   ├── $SOLUTION_NAME.sln"
+  echo "   ├── $SOLUTION_NAME.AppHost/ (Orquestador Aspire)"
+  echo "   ├── $SOLUTION_NAME.ServiceDefaults/ (Configuración compartida)"
+  echo "   ├── ${SOLUTION_NAME}.Api/"
+  echo "   └── ${SOLUTION_NAME}.Frontend/"
+  echo ""
+  echo "🚀 Para comenzar con Aspire:"
+  echo "   cd $FULL_PATH/${SOLUTION_NAME}.AppHost"
+  echo "   dotnet run"
+  echo ""
+  echo "📊 Aspire Dashboard: http://localhost:15888"
+  echo "⚛️  Frontend: http://localhost:5173"
+  echo "🔧 API: https://localhost:7000"
 fi
 
-if [ -z "$ASPIRE_MODE" ] && [ "$MICROSERVICES_MODE" != "--microservices" ]; then
-    echo "💡 Para arquitectura de microservicios, usa:"
-    echo "   bash scripts/create_solution.sh $SOLUTION_NAME . --microservices"
+if [ "$MICROSERVICES_MODE" != "--microservices" ]; then
+  echo "💡 Para arquitectura de microservicios, usa:"
+  echo "   bash scripts/create_solution.sh $SOLUTION_NAME . --microservices"
 fi
 
 echo ""
