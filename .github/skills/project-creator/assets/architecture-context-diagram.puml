@@ -1,0 +1,19 @@
+@startuml C4_Context
+!include https://raw.githubusercontent.com/plantuml-stdlib/C4-PlantUML/master/C4_Context.puml
+
+title System Context Diagram - Modelo 4+1
+
+Person(user, "Usuario", "Cliente que usa la aplicación")
+Person(admin, "Administrador", "Gestiona el sistema")
+
+System(api, "API System", "Proporciona servicios REST\ncon .NET 10 Minimal API")
+
+System_Ext(email, "Email Service", "Servicio de notificaciones")
+System_Ext(payment, "Payment Gateway", "Procesamiento de pagos")
+
+Rel(user, api, "Usa", "HTTPS")
+Rel(admin, api, "Administra", "HTTPS")
+Rel(api, email, "Envía notificaciones", "SMTP")
+Rel(api, payment, "Procesa pagos", "REST API")
+
+@enduml
