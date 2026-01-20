@@ -43,6 +43,10 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+# Get script directory for template access
+$ScriptDir = Split-Path -Parent $MyInvocation.MyCommand.Path
+$TemplateDir = Join-Path $ScriptDir "..\assets\templates\microservice"
+
 function Write-Step {
     param([string]$Message)
     Write-Host "[STEP] " -ForegroundColor Green -NoNewline
@@ -59,6 +63,29 @@ function Write-ErrorMessage {
     param([string]$Message)
     Write-Host "[ERROR] " -ForegroundColor Red -NoNewline
     Write-Host $Message
+}
+
+function Copy-Template {
+    param(
+        [string]$TemplateFile,
+        [string]$DestFile,
+        [string]$SolutionName,
+        [string]$ProjectName,
+        [string]$ServiceName,
+        [string]$ServiceNameLower,
+        [int]$HttpPort,
+        [int]$HttpsPort
+    )
+    
+    $content = Get-Content -Path $TemplateFile -Raw
+    $content = $content -replace '{{SOLUTION_NAME}}', $SolutionName
+    $content = $content -replace '{{PROJECT_NAME}}', $ProjectName
+    $content = $content -replace '{{SERVICE_NAME}}', $ServiceName
+    $content = $content -replace '{{SERVICE_NAME_LOWER}}', $ServiceNameLower
+    $content = $content -replace '{{HTTP_PORT}}', $HttpPort
+    $content = $content -replace '{{HTTPS_PORT}}', $HttpsPort
+    
+    Set-Content -Path $DestFile -Value $content -NoNewline
 }
 
 # Find solution file
@@ -92,327 +119,80 @@ if ($Https -eq 0) {
     $Https = $Http + 1000
 }
 
+# Lowercase service name for API routes
+$serviceNameLower = $Name.ToLower()
+
 # Create project directory with 4+1 architecture folders
-Write-Step "Creating project directory with 4+1 architecture..."
+Write-Step "Creating project with Kruchten 4+1 architecture..."
 New-Item -ItemType Directory -Force -Path "$projectPath\Properties" | Out-Null
 New-Item -ItemType Directory -Force -Path "$projectPath\Models" | Out-Null
 New-Item -ItemType Directory -Force -Path "$projectPath\Services" | Out-Null
 New-Item -ItemType Directory -Force -Path "$projectPath\Endpoints" | Out-Null
 New-Item -ItemType Directory -Force -Path "$projectPath\Infrastructure" | Out-Null
 
-# Create project file
-Write-Step "Creating project file..."
-@"
-<Project Sdk="Microsoft.NET.Sdk.Web">
+# Copy and substitute templates
+Write-Step "Creating project files from templates..."
 
-  <PropertyGroup>
-    <TargetFramework>net10.0</TargetFramework>
-    <ImplicitUsings>enable</ImplicitUsings>
-    <Nullable>enable</Nullable>
-  </PropertyGroup>
+Copy-Template -TemplateFile "$TemplateDir\Microservice.csproj" `
+    -DestFile "$projectPath\$projectName.csproj" `
+    -SolutionName $solutionName -ProjectName $projectName `
+    -ServiceName $Name -ServiceNameLower $serviceNameLower `
+    -HttpPort $Http -HttpsPort $Https
 
-  <ItemGroup>
-    <PackageReference Include="Dapr.AspNetCore" Version="1.*" />
-    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.*" />
-    <PackageReference Include="Scalar.AspNetCore" Version="2.*" />
-  </ItemGroup>
+Copy-Template -TemplateFile "$TemplateDir\Program.cs" `
+    -DestFile "$projectPath\Program.cs" `
+    -SolutionName $solutionName -ProjectName $projectName `
+    -ServiceName $Name -ServiceNameLower $serviceNameLower `
+    -HttpPort $Http -HttpsPort $Https
 
-  <ItemGroup>
-    <ProjectReference Include="..\$solutionName.ServiceDefaults\$solutionName.ServiceDefaults.csproj" />
-  </ItemGroup>
+Copy-Template -TemplateFile "$TemplateDir\appsettings.json" `
+    -DestFile "$projectPath\appsettings.json" `
+    -SolutionName $solutionName -ProjectName $projectName `
+    -ServiceName $Name -ServiceNameLower $serviceNameLower `
+    -HttpPort $Http -HttpsPort $Https
 
-</Project>
-"@ | Set-Content "$projectPath\$projectName.csproj"
+Copy-Template -TemplateFile "$TemplateDir\appsettings.Development.json" `
+    -DestFile "$projectPath\appsettings.Development.json" `
+    -SolutionName $solutionName -ProjectName $projectName `
+    -ServiceName $Name -ServiceNameLower $serviceNameLower `
+    -HttpPort $Http -HttpsPort $Https
 
-# Create model
-Write-Step "Creating model (Logical View)..."
-$serviceNameLower = $Name.ToLower()
+Copy-Template -TemplateFile "$TemplateDir\launchSettings.json" `
+    -DestFile "$projectPath\Properties\launchSettings.json" `
+    -SolutionName $solutionName -ProjectName $projectName `
+    -ServiceName $Name -ServiceNameLower $serviceNameLower `
+    -HttpPort $Http -HttpsPort $Https
 
-@"
-namespace $projectName.Models;
+# Architecture files
+Copy-Template -TemplateFile "$TemplateDir\Models\Model.cs" `
+    -DestFile "$projectPath\Models\${Name}Model.cs" `
+    -SolutionName $solutionName -ProjectName $projectName `
+    -ServiceName $Name -ServiceNameLower $serviceNameLower `
+    -HttpPort $Http -HttpsPort $Https
 
-/// <summary>
-/// $Name entity - Logical View (Domain Model)
-/// </summary>
-public record ${Name}Item
-{
-    public string Id { get; init; } = Guid.NewGuid().ToString();
-    public string Name { get; init; } = string.Empty;
-    public DateTime CreatedAt { get; init; } = DateTime.UtcNow;
-}
-"@ | Set-Content "$projectPath\Models\${Name}Item.cs"
+Copy-Template -TemplateFile "$TemplateDir\Services\IService.cs" `
+    -DestFile "$projectPath\Services\I${Name}Service.cs" `
+    -SolutionName $solutionName -ProjectName $projectName `
+    -ServiceName $Name -ServiceNameLower $serviceNameLower `
+    -HttpPort $Http -HttpsPort $Https
 
-# Create service interface
-Write-Step "Creating service interface..."
-@"
-namespace $projectName.Services;
+Copy-Template -TemplateFile "$TemplateDir\Services\Service.cs" `
+    -DestFile "$projectPath\Services\${Name}Service.cs" `
+    -SolutionName $solutionName -ProjectName $projectName `
+    -ServiceName $Name -ServiceNameLower $serviceNameLower `
+    -HttpPort $Http -HttpsPort $Https
 
-using $projectName.Models;
+Copy-Template -TemplateFile "$TemplateDir\Endpoints\Endpoints.cs" `
+    -DestFile "$projectPath\Endpoints\${Name}Endpoints.cs" `
+    -SolutionName $solutionName -ProjectName $projectName `
+    -ServiceName $Name -ServiceNameLower $serviceNameLower `
+    -HttpPort $Http -HttpsPort $Https
 
-/// <summary>
-/// $Name service interface - Process View (Abstraction)
-/// </summary>
-public interface I${Name}Service
-{
-    Task<IEnumerable<${Name}Item>> GetAllAsync();
-    Task<${Name}Item?> GetByIdAsync(string id);
-    Task<${Name}Item> CreateAsync(${Name}Item item);
-    Task<bool> DeleteAsync(string id);
-}
-"@ | Set-Content "$projectPath\Services\I${Name}Service.cs"
-
-# Create service implementation
-Write-Step "Creating service implementation (Process View)..."
-@"
-namespace $projectName.Services;
-
-using Dapr.Client;
-using $projectName.Models;
-
-/// <summary>
-/// $Name service implementation - Process View (Business Logic)
-/// </summary>
-public class ${Name}Service : I${Name}Service
-{
-    private readonly DaprClient _daprClient;
-    private readonly ILogger<${Name}Service> _logger;
-    private const string StateStoreName = "statestore";
-    private const string StateKey = "${serviceNameLower}-items";
-
-    public ${Name}Service(DaprClient daprClient, ILogger<${Name}Service> logger)
-    {
-        _daprClient = daprClient;
-        _logger = logger;
-    }
-
-    public async Task<IEnumerable<${Name}Item>> GetAllAsync()
-    {
-        try
-        {
-            var items = await _daprClient.GetStateAsync<List<${Name}Item>>(StateStoreName, StateKey);
-            return items ?? new List<${Name}Item>();
-        }
-        catch (Exception ex)
-        {
-            _logger.LogError(ex, "Error getting all $Name items");
-            return new List<${Name}Item>();
-        }
-    }
-
-    public async Task<${Name}Item?> GetByIdAsync(string id)
-    {
-        var items = await GetAllAsync();
-        return items.FirstOrDefault(x => x.Id == id);
-    }
-
-    public async Task<${Name}Item> CreateAsync(${Name}Item item)
-    {
-        var items = (await GetAllAsync()).ToList();
-        items.Add(item);
-        await _daprClient.SaveStateAsync(StateStoreName, StateKey, items);
-        _logger.LogInformation("Created $Name item {Id}", item.Id);
-        return item;
-    }
-
-    public async Task<bool> DeleteAsync(string id)
-    {
-        var items = (await GetAllAsync()).ToList();
-        var item = items.FirstOrDefault(x => x.Id == id);
-        if (item == null) return false;
-        
-        items.Remove(item);
-        await _daprClient.SaveStateAsync(StateStoreName, StateKey, items);
-        _logger.LogInformation("Deleted $Name item {Id}", id);
-        return true;
-    }
-}
-"@ | Set-Content "$projectPath\Services\${Name}Service.cs"
-
-# Create endpoints
-Write-Step "Creating endpoints (Scenario View)..."
-@"
-namespace $projectName.Endpoints;
-
-using $projectName.Models;
-using $projectName.Services;
-
-/// <summary>
-/// $Name endpoints - Scenario View (Use Cases/API)
-/// </summary>
-public static class ${Name}Endpoints
-{
-    public static void Map${Name}Endpoints(this WebApplication app)
-    {
-        var group = app.MapGroup("/api/$serviceNameLower")
-            .WithTags("$Name");
-
-        group.MapGet("/", async (I${Name}Service service) =>
-        {
-            var items = await service.GetAllAsync();
-            return Results.Ok(items);
-        })
-        .WithName("GetAll${Name}s")
-        .WithDescription("Get all $Name items");
-
-        group.MapGet("/{id}", async (string id, I${Name}Service service) =>
-        {
-            var item = await service.GetByIdAsync(id);
-            return item is not null ? Results.Ok(item) : Results.NotFound();
-        })
-        .WithName("Get${Name}ById")
-        .WithDescription("Get a $Name item by ID");
-
-        group.MapPost("/", async (${Name}Item item, I${Name}Service service) =>
-        {
-            var created = await service.CreateAsync(item);
-            return Results.Created($"/api/$serviceNameLower/{created.Id}", created);
-        })
-        .WithName("Create${Name}")
-        .WithDescription("Create a new $Name item");
-
-        group.MapDelete("/{id}", async (string id, I${Name}Service service) =>
-        {
-            var deleted = await service.DeleteAsync(id);
-            return deleted ? Results.NoContent() : Results.NotFound();
-        })
-        .WithName("Delete${Name}")
-        .WithDescription("Delete a $Name item");
-    }
-}
-"@ | Set-Content "$projectPath\Endpoints\${Name}Endpoints.cs"
-
-# Create Dapr state store helper (Physical/Infrastructure View)
-Write-Step "Creating infrastructure (Physical View)..."
-@"
-namespace $projectName.Infrastructure;
-
-/// <summary>
-/// Dapr State Store configuration - Physical View (Infrastructure)
-/// </summary>
-public static class DaprStateStore
-{
-    public const string StoreName = "statestore";
-    
-    public static class Keys
-    {
-        public const string ${Name}Items = "${serviceNameLower}-items";
-    }
-}
-"@ | Set-Content "$projectPath\Infrastructure\DaprStateStore.cs"
-
-# Create Program.cs
-Write-Step "Creating Program.cs..."
-@"
-using $projectName.Endpoints;
-using $projectName.Services;
-
-var builder = WebApplication.CreateBuilder(args);
-
-// Add service defaults (OpenTelemetry, health checks, service discovery)
-builder.AddServiceDefaults();
-
-// Add OpenAPI
-builder.Services.AddOpenApi("v1", options =>
-{
-    options.AddDocumentTransformer((document, context, cancellationToken) =>
-    {
-        document.Info.Title = "$Name Service API";
-        document.Info.Version = "v1";
-        return Task.CompletedTask;
-    });
-});
-
-// Add Dapr
-builder.Services.AddDaprClient();
-
-// Add Services (Process View - Dependency Injection)
-builder.Services.AddScoped<I${Name}Service, ${Name}Service>();
-
-// Add CORS
-builder.Services.AddCors(options =>
-{
-    options.AddDefaultPolicy(policy =>
-    {
-        policy.AllowAnyOrigin()
-              .AllowAnyHeader()
-              .AllowAnyMethod();
-    });
-});
-
-var app = builder.Build();
-
-// Configure pipeline
-if (app.Environment.IsDevelopment())
-{
-    app.MapOpenApi();
-    app.MapScalarApiReference();
-}
-
-app.UseHttpsRedirection();
-app.UseCors();
-
-// Map default health endpoints
-app.MapDefaultEndpoints();
-
-// Map $Name endpoints (Scenario View)
-app.Map${Name}Endpoints();
-
-app.Run();
-"@ | Set-Content "$projectPath\Program.cs"
-
-# Create appsettings.json
-@'
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
-    }
-  },
-  "AllowedHosts": "*"
-}
-'@ | Set-Content "$projectPath\appsettings.json"
-
-# Create appsettings.Development.json
-@'
-{
-  "Logging": {
-    "LogLevel": {
-      "Default": "Information",
-      "Microsoft.AspNetCore": "Warning"
-    }
-  }
-}
-'@ | Set-Content "$projectPath\appsettings.Development.json"
-
-# Create launchSettings.json
-@"
-{
-  "`$schema": "https://json.schemastore.org/launchsettings.json",
-  "profiles": {
-    "http": {
-      "commandName": "Project",
-      "dotnetRunMessages": true,
-      "launchBrowser": true,
-      "launchUrl": "scalar/v1",
-      "applicationUrl": "http://localhost:$Http",
-      "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
-      }
-    },
-    "https": {
-      "commandName": "Project",
-      "dotnetRunMessages": true,
-      "launchBrowser": true,
-      "launchUrl": "scalar/v1",
-      "applicationUrl": "https://localhost:$Https;http://localhost:$Http",
-      "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development"
-      }
-    }
-  }
-}
-"@ | Set-Content "$projectPath\Properties\launchSettings.json"
+Copy-Template -TemplateFile "$TemplateDir\Infrastructure\DaprStateStore.cs" `
+    -DestFile "$projectPath\Infrastructure\DaprStateStore.cs" `
+    -SolutionName $solutionName -ProjectName $projectName `
+    -ServiceName $Name -ServiceNameLower $serviceNameLower `
+    -HttpPort $Http -HttpsPort $Https
 
 # Add project to solution
 Write-Step "Adding project to solution..."
@@ -469,6 +249,6 @@ Write-Host "HTTP port: $Http"
 Write-Host "HTTPS port: $Https"
 Write-Host ""
 Write-Host "Next steps:"
-Write-Host "  1. Add your domain models and endpoints to Program.cs"
+Write-Host "  1. Add your domain models and endpoints"
 Write-Host "  2. Update AppHost.cs if this service needs references to other services"
 Write-Host "  3. Run 'aspire run' to test the new service"
