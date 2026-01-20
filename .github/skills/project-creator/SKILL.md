@@ -22,6 +22,20 @@ The generated solution includes:
 3. Run automation script or follow manual workflow
 4. Verify the solution works
 
+## Architecture Overview
+
+This skill uses a **single-source-of-truth template system** to eliminate code duplication:
+
+- **Templates:** Stored in [`assets/templates/`](assets/templates/) with `{{PLACEHOLDER}}` syntax
+- **Scripts:** Thin orchestrators in [`scripts/`](scripts/) that read templates and substitute placeholders
+- **Documentation:** [`references/REFERENCE.md`](references/REFERENCE.md) references templates directly
+
+**Benefits:**
+- Update once in `assets/templates/` → changes propagate everywhere
+- Scripts are ~80 lines vs ~1100+ in previous version
+- Manual workflow and automation use identical templates
+- Easy to maintain and extend
+
 ## Step 1: Gather Requirements
 
 Ask only what is strictly necessary. Propose defaults and proceed if user accepts or doesn't respond:
@@ -95,9 +109,11 @@ dapr init
 
 If scripts cannot be used, follow [REFERENCE.md](references/REFERENCE.md) for step-by-step commands.
 
-Template details:
-- API template: [TEMPLATE_API.md](references/TEMPLATE_API.md)
-- Web template: [TEMPLATE_WEB.md](references/TEMPLATE_WEB.md)
+All templates are located in [`assets/templates/`](assets/templates/) organized by project type:
+- `servicedefaults/` - Shared service configuration
+- `microservice/` - Backend API with 4+1 architecture (used for initial API and added microservices)
+- `apphost/` - Aspire orchestration
+- `web/` - React frontend with Vite + Zustand
 
 ## Step 4: Verify Solution (Definition of Done)
 
@@ -121,6 +137,8 @@ This starts all services via the Aspire dashboard.
 
 ## Project Structure
 
+### Generated Solution Structure
+
 ```
 <SolutionName>/
 ├── <SolutionName>.sln
@@ -134,17 +152,43 @@ This starts all services via the Aspire dashboard.
 │   ├── <SolutionName>.Api/               # .NET 10 Minimal API
 │   │   ├── Program.cs
 │   │   ├── appsettings.json
-│   │   └── <SolutionName>.Api.csproj
+│   │   ├── Models/                       # Logical View
+│   │   ├── Services/                     # Process View
+│   │   ├── Endpoints/                    # Scenario View
+│   │   └── Infrastructure/               # Physical View
 │   └── <SolutionName>.Web/               # Vite + React frontend
 │       ├── src/
 │       │   ├── App.tsx
 │       │   ├── main.tsx
 │       │   ├── store/
-│       │   └── components/
+│       │   ├── components/
+│       │   ├── pages/
+│       │   └── api/
 │       ├── package.json
 │       ├── vite.config.ts
 │       └── tailwind.config.js
 └── README.md
+```
+
+### Skill Structure
+
+```
+project-creator/
+├── SKILL.md                     # This file - skill documentation
+├── assets/
+│   └── templates/               # Single source of truth for all code
+│       ├── servicedefaults/     # ServiceDefaults templates
+│       ├── api/                 # API templates (4+1 architecture)
+│       ├── apphost/             # AppHost templates
+│       ├── web/                 # React frontend templates
+│       └── README.md            # Solution README template
+├── scripts/
+│   ├── create-solution.sh       # Bash script (thin orchestrator)
+│   ├── create-solution.ps1      # PowerShell script (thin orchestrator)
+│   ├── add-microservice.sh      # Add service to existing solution
+│   └── add-microservice.ps1
+└── references/
+    └── REFERENCE.md             # Manual workflow (references templates)
 ```
 
 ## Adding New Microservices
@@ -197,3 +241,103 @@ The solution follows Kruchten's 4+1 architectural views:
 - **Development View**: Modular project structure with clear separation
 - **Physical View**: Container-ready services orchestrated by Aspire
 - **Scenarios**: API endpoints as use case implementations
+
+---
+
+## Template System
+
+The skill uses a **single-source-of-truth template system** to eliminate duplication:
+
+### Template Organization
+
+All templates are located in [`assets/templates/`](assets/templates/):
+
+```
+assets/templates/
+├── servicedefaults/
+│   ├── ServiceDefaults.csproj
+│   └── Extensions.cs
+├── microservice/                    # Used for both initial API and added services
+│   ├── Microservice.csproj
+│   ├── Program.cs
+│   ├── appsettings.json
+│   ├── appsettings.Development.json
+│   ├── launchSettings.json
+│   ├── Models/Model.cs
+│   ├── Services/IService.cs
+│   ├── Services/Service.cs
+│   ├── Endpoints/Endpoints.cs
+│   └── Infrastructure/DaprStateStore.cs
+├── apphost/
+│   ├── AppHost.csproj
+│   ├── AppHost.cs
+│   ├── appsettings.json
+│   ├── appsettings.Development.json
+│   └── launchSettings.json
+├── web/
+│   ├── package.json
+│   ├── vite.config.ts
+│   ├── src/App.tsx
+│   ├── src/main.tsx
+│   ├── src/components/...
+│   ├── src/pages/...
+│   └── ...
+└── README.md
+```
+
+### Placeholder Convention
+
+Templates use `{{PLACEHOLDER}}` syntax for variable substitution:
+
+| Placeholder | Description | Example Value |
+|-------------|-------------|---------------|
+| `{{SOLUTION_NAME}}` | C# namespaces and project names | `MyCompany.Orders` |
+| `{{SOLUTION_NAME_LOWER}}` | Lowercase for package names | `mycompany-orders` |
+| `{{PROJECT_NAME}}` | Full project name (for microservices) | `MyCompany.Orders` |
+| `{{SERVICE_NAME}}` | Service name (for microservices) | `Orders` |
+| `{{SERVICE_NAME_LOWER}}` | Lowercase service name | `orders` |
+| `{{API_HTTP_PORT}}` | HTTP port for API | `5080` |
+| `{{API_HTTPS_PORT}}` | HTTPS port for API | `7080` |
+| `{{HTTP_PORT}}` | HTTP port (microservices) | `5100` |
+| `{{HTTPS_PORT}}` | HTTPS port (microservices) | `6100` |
+| `{{WEB_PORT}}` | Frontend dev server port | `5173` |
+
+### How It Works
+
+1. **Scripts read templates** from `assets/templates/`
+2. **Substitute placeholders** with user-provided or default values
+3. **Write to destination** in the generated solution
+
+**Shell script example:**
+```bash
+sed -e "s|{{SOLUTION_NAME}}|$SOLUTION_NAME|g" \
+    -e "s|{{API_HTTPS_PORT}}|$API_HTTPS_PORT|g" \
+    template.txt > output.txt
+```
+
+**PowerShell example:**
+```powershell
+(Get-Content template.txt) -replace '{{SOLUTION_NAME}}','MyApp' | 
+    Set-Content output.txt
+```
+
+### Benefits
+
+- ✅ **Single source of truth:** Update template once, changes propagate everywhere
+- ✅ **Maintainability:** Scripts reduced from 1100+ lines to ~250 lines
+- ✅ **Consistency:** Manual workflow and automation use identical templates
+- ✅ **Extensibility:** Easy to add new project types or modify existing ones
+- ✅ **Testability:** Templates can be validated independently of scripts
+
+### Updating Templates
+
+To modify the generated solution structure:
+
+1. Edit files in `assets/templates/`
+2. Test with `./scripts/create-solution.sh -n TestSolution`
+3. Verify both automated and manual workflows work
+4. Document changes in `REFERENCE.md` if needed
+
+**No need to update:**
+- Scripts (they read from templates automatically)
+- Documentation (references templates directly)
